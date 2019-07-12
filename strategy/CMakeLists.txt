@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 2.8.3)
 project(strategy)
 
 find_package(catkin REQUIRED COMPONENTS
-#  dynamic_tutorials
   roscpp
   rospy
   std_msgs
@@ -18,11 +17,10 @@ find_package(catkin REQUIRED COMPONENTS
 #    FILES
 #  )
 
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(
+  FILES
+  GameState.srv
+)
 
 # add_action_files(
 #   FILES
@@ -36,17 +34,9 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 generate_dynamic_reconfigure_options(
-  cfg/Strategy.cfg
+  cfg/GameState.cfg
+  cfg/Robot.cfg
 )
-
-## for dynamic reconfigure
-# add_executable(game_state_server src/game_state_server.cpp)
-
-## make sure configure headers are built before any node using them
-# add_dependencies(game_state_server ${PROJECT_NAME}_gencfg)
-
-## for dynamic reconfigure
-# target_link_libraries(game_state_server ${catkin_LIBRARIES})
 
 catkin_package(
 # INCLUDE_DIRS include
@@ -72,11 +62,6 @@ include_directories(
 # set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME node PREFIX "")
 
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-
-add_executable(gazebo_relay_node src/gazebo_relay_node.cpp)
-#target_link_libraries(gazebo_relay_node ${catkin_LIBRARIES} /opt/ros/kinetic/lib/libmessage_filters.so)
-target_link_libraries(gazebo_relay_node ${catkin_LIBRARIES})
-add_dependencies(gazebo_relay_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}

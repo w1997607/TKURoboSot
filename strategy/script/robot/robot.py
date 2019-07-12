@@ -2,10 +2,7 @@
 import rospy
 import math
 import numpy as np
-from nubot_common.msg import OminiVisionInfo
-from nubot_common.srv import Shoot
-from nubot_common.srv import BallHandle
-from transfer.msg import PPoint
+import time
 from simple_pid import PID
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Twist
@@ -15,15 +12,11 @@ from std_msgs.msg import String
 from std_msgs.msg import Int32
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Int32MultiArray
+from std_msgs.msg import Bool 
 
 ## Rotate 90 for 6th robot
 ## DO NOT CHANGE THIS VALUE
 ROTATE_V_ANG = 90
-
-## Gazebo Simulator
-SIM_VISION_TOPIC = "nubot{}/omnivision/OmniVisionInfo"
-SIM_SHOOT_SRV  = "nubot{}/Shoot"
-SIM_HANDLE_SRV = "nubot{}/BallHandle"
 
 ## Real Robot
 VISION_TOPIC = "vision/object"
@@ -40,12 +33,14 @@ class Robot(object):
   __object_info = {'ball':{'dis' : 0, 'ang' : 0},
                    'Blue':{'dis' : 0, 'ang' : 0},
                    'Yellow':{'dis' : 0, 'ang' : 0},
+                   'time' : 0,
                    'velocity' : 0 }
   __obstacle_info = {'angle' : {'min' : 0 , 'max' : 0 , 'increment' : math.pi/180*3} ,
 		                 'scan' : 0 ,
 		                 'range' : {'min' : 0 , 'max' : 0 } ,
                      'ranges' : [0] ,
 		                 'intensities' : [0] }
+  __ball_is_handled = False
   ## Configs
   __minimum_w = 0
   __maximum_w = 0
@@ -97,59 +92,25 @@ class Robot(object):
   def __init__(self, robot_num, sim = False):
     self.robot_number = robot_num
 
-    if not sim :
-      rospy.Subscriber(VISION_TOPIC, Object, self._GetVision)
-      rospy.Subscriber(POSITION_TOPIC,PoseWithCovarianceStamped,self._GetPosition)
-      rospy.Subscriber('BlackRealDis',Int32MultiArray,self._GetBlackItemInfo)
-      self.MotionCtrl = self.RobotCtrlS
-      self.RobotBallHandle = self.RealBallHandle
-      self.RobotShoot = self.RealShoot
-    else:
-      self._SimSubscriber(SIM_VISION_TOPIC.format(self.robot_number))
-      self.MotionCtrl = self.RobotCtrlS
-      self.RobotBallHandle = self.SimBallHandle
-      self.RobotShoot = self.SimShoot
-      self.TuningVelocityContorller(1, 0, 0)
-      self.TuningAngularVelocityContorller(0.1, 0, 0)
-
+    rospy.Subscriber(VISION_TOPIC, Object, self._GetVision)
+    rospy.Subscriber(POSITION_TOPIC,PoseWithCovarianceStamped,self._GetPosition)
+    self.MotionCtrl = self.RobotCtrlS
+    self.RobotShoot = self.RealShoot
     self.cmdvel_pub = self._Publisher(CMDVEL_TOPIC, Twist)
     self.state_pub  = self._Publisher(STRATEGY_STATE_TOPIC.format(self.robot_number), String)
     self.shoot_pub  = self._Publisher(SHOOT_TOPIC, Int32)
 
-  def _SimSubscriber(self, topic):
-    rospy.Subscriber(topic.format(self.robot_number), \
-                      OminiVisionInfo, \
-                      self._GetSimVision)
-    rospy.Subscriber((topic + "/GoalInfo").format(self.robot_number), \
-                      PPoint, \
-                      self._GetSimGoalInfo)
-    rospy.Subscriber('/scan', LaserScan, self._GetSimLaserScanInfo)
+    if not sim :
+      rospy.Subscriber('BlackRealDis',Int32MultiArray,self._GetBlackItemInfo)
+      self.RobotBallHandle = self.RealBallHandle
+    else:
+      self.RobotBallHandle = self.SimBallHandle
+      rospy.Subscriber("/robot1/BallIsHandle", Bool, self._CheckBallHandle)
+      self.TuningVelocityContorller(1, 0, 0)
+      self.TuningAngularVelocityContorller(0.1, 0, 0)
 
   def _Publisher(self, topic, mtype):
     return rospy.Publisher(topic, mtype, queue_size=1)
-
-  def _GetSimVision(self, vision):
-    self.__object_info['ball']['dis'] = vision.ballinfo.real_pos.radius
-    self.__object_info['ball']['ang'] = math.degrees(vision.ballinfo.real_pos.angle)
-    self.__robot_info['location']['x']   = vision.robotinfo[self.robot_number - 1].pos.x
-    self.__robot_info['location']['y']   = vision.robotinfo[self.robot_number - 1].pos.y
-    self.__robot_info['location']['yaw'] = math.degrees(vision.robotinfo[self.robot_number - 1].heading.theta)
-
-  def _GetSimGoalInfo(self, goal_info):
-    self.__object_info['Blue']['dis'] = goal_info.right_radius
-    self.__object_info['Blue']['ang'] = goal_info.right_angle
-    self.__object_info['Yellow']['dis']  = goal_info.left_radius
-    self.__object_info['Yellow']['ang']  = goal_info.left_angle
-
-  def _GetSimLaserScanInfo(self ,laser):
-    self.__obstacle_info['angle']['min'] = laser.angle_min
-    self.__obstacle_info['angle']['max'] = laser.angle_max
-    self.__obstacle_info['angle']['increment'] = laser.angle_increment
-    self.__obstacle_info['scan'] = laser.scan_time
-    self.__obstacle_info['range']['min'] = laser.range_min
-    self.__obstacle_info['range']['max'] = laser.range_max
-    self.__obstacle_info['ranges'] = laser.ranges
-    self.__obstacle_info['intensities'] = laser.intensities
 
   def _GetVision(self, vision):
     self.__object_info['ball']['dis']    = vision.ball_dis
@@ -211,6 +172,7 @@ class Robot(object):
       self.cmdvel_pub.publish(msg)
 
   def GetObjectInfo(self):
+    self.__object_info['time'] = time.time()
     return self.__object_info
 
   def GetRobotInfo(self):
@@ -219,28 +181,18 @@ class Robot(object):
   def GetObstacleInfo(self):
     return self.__obstacle_info
 
-  def SimShoot(self, power, pos) :
-    rospy.wait_for_service(SIM_SHOOT_SRV.format(self.robot_number), 1)
-    try:
-      client = rospy.ServiceProxy(SIM_SHOOT_SRV.format(self.robot_number), Shoot)
-      resp1 = client(power, pos)
-      return resp1
-    except rospy.ServiceException :
-      print ("Service call failed")
-
   def RealShoot(self, power, pos) :
     msg = Int32()
-    msg.data = 100
+    msg.data = power
     self.shoot_pub.publish(msg)
 
   def SimBallHandle(self):
-    rospy.wait_for_service(SIM_HANDLE_SRV.format(self.robot_number), 1)
-    try:
-      client = rospy.ServiceProxy(SIM_HANDLE_SRV.format(self.robot_number), BallHandle)
-      resp1 = client(1)
-      return resp1.BallIsHolding
-    except rospy.ServiceException :
-      print ("Service call failed")
+    pub = rospy.Publisher('motion/hold', Bool, queue_size=1)
+    pub.publish(True)
+    return self.__ball_is_handled
+
+  def _CheckBallHandle(self, data):
+    self.__ball_is_handled = data.data
 
   def RealBallHandle(self):
     if self.__object_info['ball']['dis'] < self.__handle_dis and self.__object_info['ball']['ang'] < self.__handle_ang:

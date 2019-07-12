@@ -4,8 +4,12 @@ import rospy
 import math
 import numpy as np
 
+from robot.robot import Robot
 
-class Attack(object):  
+class Attack(Robot):
+  def __init__(self):
+    pass
+
   
   
   def ClassicAttacking(self, goal_dis, goal_ang ,ranges ,angle_increment ,a):
@@ -14,8 +18,6 @@ class Attack(object):
     self.edit = []
     self.__goal_dis = goal_dis
     self.__goal_ang = goal_ang
-    self.__ranges = ranges
-    self.__angle_increment = angle_increment
 
 
     self.raw , object_dis= self.state(a , ranges) 
@@ -182,3 +184,27 @@ class Attack(object):
     print(v_x,v_y,v_yaw)
     return  v_x ,v_y,v_yaw
 
+
+  def cross_over(self, t, side, run):
+    robot_info = self.GetRobotInfo()
+    shoot = 0
+
+    go_x = t[side]['dis'] * math.cos(math.radians(t[side]['ang']))
+    go_y = t[side]['dis'] * math.sin(math.radians(t[side]['ang']))
+    
+    v_x   = go_x  * math.cos(math.radians(run['yaw'])) - go_y  * math.sin(math.radians(run['yaw']))
+    v_y   = go_x  * math.sin(math.radians(run['yaw'])) + go_y  * math.cos(math.radians(run['yaw'])) 
+
+ 
+    if t[side]['dis'] > 250:
+       v_yaw = t[side]['ang']
+    else:
+      if t[side]['ang'] > 0 :
+        v_yaw = -80
+      else :
+        v_yaw = t[side]['ang']
+    if t[side]['dis'] <= 200 and t[side]['ang']<=10:
+      shoot = 1
+    return v_x, v_y, v_yaw, shoot
+
+  
