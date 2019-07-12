@@ -13,6 +13,8 @@ from vision.msg import Object
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from std_msgs.msg import String
 from std_msgs.msg import Int32
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Int32MultiArray
 
 ## Rotate 90 for 6th robot
 ## DO NOT CHANGE THIS VALUE
@@ -39,6 +41,11 @@ class Robot(object):
                    'Blue':{'dis' : 0, 'ang' : 0},
                    'Yellow':{'dis' : 0, 'ang' : 0},
                    'velocity' : 0 }
+  __obstacle_info = {'angle' : {'min' : 0 , 'max' : 0 , 'increment' : math.pi/180*3} ,
+		                 'scan' : 0 ,
+		                 'range' : {'min' : 0 , 'max' : 0 } ,
+                     'ranges' : [0] ,
+		                 'intensities' : [0] }
   ## Configs
   __minimum_w = 0
   __maximum_w = 0
@@ -85,6 +92,7 @@ class Robot(object):
   def ShowRobotInfo(self):
     print("Robot informations: {}".format(self.__robot_info))
     print("Objects informations: {}".format(self.__object_info))
+    print("Obstacles informations: {}".format(self.__obstacle_info))
 
   def __init__(self, robot_num, sim = False):
     self.robot_number = robot_num
@@ -92,6 +100,7 @@ class Robot(object):
     if not sim :
       rospy.Subscriber(VISION_TOPIC, Object, self._GetVision)
       rospy.Subscriber(POSITION_TOPIC,PoseWithCovarianceStamped,self._GetPosition)
+      rospy.Subscriber('BlackRealDis',Int32MultiArray,self._GetBlackItemInfo)
       self.MotionCtrl = self.RobotCtrlS
       self.RobotBallHandle = self.RealBallHandle
       self.RobotShoot = self.RealShoot
@@ -114,6 +123,7 @@ class Robot(object):
     rospy.Subscriber((topic + "/GoalInfo").format(self.robot_number), \
                       PPoint, \
                       self._GetSimGoalInfo)
+    rospy.Subscriber('/scan', LaserScan, self._GetSimLaserScanInfo)
 
   def _Publisher(self, topic, mtype):
     return rospy.Publisher(topic, mtype, queue_size=1)
@@ -131,6 +141,16 @@ class Robot(object):
     self.__object_info['Yellow']['dis']  = goal_info.left_radius
     self.__object_info['Yellow']['ang']  = goal_info.left_angle
 
+  def _GetSimLaserScanInfo(self ,laser):
+    self.__obstacle_info['angle']['min'] = laser.angle_min
+    self.__obstacle_info['angle']['max'] = laser.angle_max
+    self.__obstacle_info['angle']['increment'] = laser.angle_increment
+    self.__obstacle_info['scan'] = laser.scan_time
+    self.__obstacle_info['range']['min'] = laser.range_min
+    self.__obstacle_info['range']['max'] = laser.range_max
+    self.__obstacle_info['ranges'] = laser.ranges
+    self.__obstacle_info['intensities'] = laser.intensities
+
   def _GetVision(self, vision):
     self.__object_info['ball']['dis']    = vision.ball_dis
     self.__object_info['ball']['ang']    = vision.ball_ang
@@ -138,6 +158,9 @@ class Robot(object):
     self.__object_info['Blue']['ang']    = vision.blue_fix_ang
     self.__object_info['Yellow']['dis']  = vision.yellow_fix_dis
     self.__object_info['Yellow']['ang']  = vision.yellow_fix_ang
+
+  def _GetBlackItemInfo(self, vision):
+    self.__obstacle_info['ranges'] =vision.data
   
   def _GetPosition(self,loc):
     self.__robot_info['location']['x'] = loc.pose.pose.position.x*100
@@ -192,6 +215,9 @@ class Robot(object):
 
   def GetRobotInfo(self):
     return self.__robot_info
+
+  def GetObstacleInfo(self):
+    return self.__obstacle_info
 
   def SimShoot(self, power, pos) :
     rospy.wait_for_service(SIM_SHOOT_SRV.format(self.robot_number), 1)

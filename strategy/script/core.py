@@ -52,9 +52,10 @@ class Core(Robot, StateMachine):
       x, y, yaw = self.CC.StraightForward(t['ball']['dis'], t['ball']['ang'])
       self.MotionCtrl(x, y, yaw)
 
-  def on_toAttack(self, t, side):
-    x, y, yaw = self.AC.ClassicAttacking(t[side]['dis'], t[side]['ang'])
+  def on_toAttack(self, t, side ,l,a):
+    x, y, yaw = self.AC.ClassicAttacking(t[side]['dis'], t[side]['ang'], l['ranges'], l['angle']['increment'],a)
     self.MotionCtrl(x, y, yaw)
+    log('attack')
 
   def on_toShoot(self, power, pos):
     self.RobotShoot(power, pos)
@@ -122,6 +123,7 @@ class Strategy(object):
 
       targets = self.robot.GetObjectInfo()
       position = self.robot.GetRobotInfo()
+      laser = self.robot.GetObstacleInfo()
 
       if targets is None or targets['ball']['ang'] == 999 and self.game_start: # Can not find ball when starting
         print("Can not find ball")
@@ -141,13 +143,13 @@ class Strategy(object):
             if self.strategy_mode == "Attack":
               self.robot.toOrbit(targets, self.opp_side)
             elif self.strategy_mode == "Defense":
-              self.robot.toAttack(targets, self.opp_side)
+              self.robot.toAttack(targets, self.opp_side , laser ,a)
           else:
             self.Chase(targets)
 
         if self.robot.is_orbit:
           if abs(targets[self.opp_side]['ang']) < self.orb_attack_ang :
-            self.robot.toAttack(targets, self.opp_side)
+            self.robot.toAttack(targets, self.opp_side , laser ,a)
           elif not self.robot.CheckBallHandle():
             self.Chase(targets)
           else:
@@ -156,13 +158,13 @@ class Strategy(object):
         if self.robot.is_attack:
           if not self.robot.CheckBallHandle():
             self.Chase(targets)
-          elif abs(targets[self.opp_side]['ang']) < self.atk_shoot_ang :
+          elif abs(targets[self.opp_side]['ang']) < self.atk_shoot_ang and targets[self.opp_side]['dis'] < 200:
             self.robot.toShoot(3, 1)
           else:
-            self.robot.toAttack(targets, self.opp_side)
+            self.robot.toAttack(targets, self.opp_side , laser ,a)
 
         if self.robot.is_shoot:
-          self.robot.toAttack(targets, self.opp_side)
+          self.robot.toAttack(targets, self.opp_side , laser ,a)
 
       ## Run point
       if self.robot.is_point:
@@ -203,9 +205,11 @@ if __name__ == '__main__':
     if SysCheck(sys.argv[1:]) == "Native Mode":
       log("Start Native")
       s = Strategy(1, False)
+      a=0
     elif SysCheck(sys.argv[1:]) == "Simulative Mode":
       log("Start Sim")
       s = Strategy(1, True)
+      a=1
     # s.main(sys.argv[1:])
     s.main()
   except rospy.ROSInterruptException:
